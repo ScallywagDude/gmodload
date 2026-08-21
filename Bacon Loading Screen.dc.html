@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/tokens/colors.css">
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/tokens/typography.css">
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/tokens/radius.css">
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/tokens/elevation.css">
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/tokens/motion.css">
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/tokens/semantic.css">
+<link rel="stylesheet" href="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/styles.css">
+<script src="_ds/j-runner-premium-design-system-5a2f4031-fa78-47fb-b49c-9b5605c4563c/_ds_bundle.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #161619; }
+  a { color: var(--jr-accent); }
+  a:hover { color: var(--jr-accent-light); }
+  #xfall { display: none; }
+  @keyframes bacon-fade { from { opacity: 0; } to { opacity: 1; } }
+</style>
+</helmet>
+<div style="position: relative; min-height: 100vh; width: 100%; background: var(--jr-window-bg); overflow: hidden; font-family: var(--jr-font-ui);">
+  <canvas id="bacon-fall" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block;"></canvas>
+
+  <div style="position: relative; min-height: 100vh; display: grid; grid-template-rows: 1fr auto; box-sizing: border-box;">
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 40px;">
+      
+      <div ref="{{ wordRef }}" style="animation: bacon-fade 10s linear both; color: var(--jr-text-primary); font: 700 clamp(72px, 18vw, 260px)/1 var(--jr-font-ui); letter-spacing: -0.02em; width: 680px; height: 326px; font-size: 60px">Gay Bar with absolutely no gay people of color, I mean the rainbow, obviously you racist fuck</div><div style="color: var(--jr-text-secondary); font: 400 var(--jr-text-sm)/1 var(--jr-font-ui); letter-spacing: 0.18em; text-transform: uppercase;">{{ tagline }}</div>
+    </div>
+
+    <div style="display: flex; justify-content: center; padding: 0 20px 20px;">
+      <x-import component-from-global-scope="JRunnerPremiumDesignSystem_5a2f40.StatusBar" items="{{ status }}" hint-size="auto,26px" style="{{ statusBarStyle }}"></x-import>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;serverAddress&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;73.179.76.189:27015&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tagline&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Please stand by&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;fadeSeconds&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:10,&quot;min&quot;:2,&quot;max&quot;:30,&quot;step&quot;:1,&quot;unit&quot;:&quot;s&quot;,&quot;tsType&quot;:&quot;number&quot;},&quot;fallDensity&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2.6,&quot;min&quot;:0,&quot;max&quot;:5,&quot;step&quot;:0.2,&quot;tsType&quot;:&quot;number&quot;}}">
+class Component extends DCLogic {
+  state = { server: null, query: "querying" };
+
+  constructor(p) {
+    super(p);
+    this.canvasRef = React.createRef();
+    this.wordRef = React.createRef();
+  }
+
+  componentDidMount() {
+    const dur = (this.props.fadeSeconds ?? 10) * 1000;
+    if (this.wordRef.current) this.wordRef.current.style.animationDuration = dur + "ms";
+    this.startFall();
+    this.queryServer();
+    this.poll = setInterval(() => this.queryServer(), 30000);
+  }
+
+  async queryServer() {
+    const addr = this.props.serverAddress ?? "73.179.76.189:27015";
+    const [ip, port] = addr.split(":");
+    try {
+      const url = "https://api.battlemetrics.com/servers?filter[game]=gmod&filter[search]=" +
+        encodeURIComponent(ip) + "&page[size]=10";
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      const hit = (j.data || []).find(d => String(d.attributes.port) === String(port)) || (j.data || [])[0];
+      if (!hit) { this.setState({ query: "notfound" }); return; }
+      const a = hit.attributes;
+      this.setState({
+        query: "online",
+        server: {
+          name: a.name,
+          map: (a.details && a.details.map) || a.map || "unknown",
+          gamemode: (a.details && (a.details.gmod_gamemode_name || a.details.gamemode)) || "unknown",
+          players: a.players,
+          maxPlayers: a.maxPlayers,
+          status: a.status
+        }
+      });
+    } catch (e) {
+      this.setState({ query: "unreachable" });
+    }
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.poll);
+    cancelAnimationFrame(this.fallRaf);
+    cancelAnimationFrame(this.retryRaf);
+    window.removeEventListener("resize", this.onResize);
+  }
+
+  startFall() {
+    const c = document.getElementById("bacon-fall");
+    if (!c || !c.clientWidth) { this.retryRaf = requestAnimationFrame(() => this.startFall()); return; }
+    const ctx = c.getContext("2d");
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const mult = { count: 2.6, speed: 0.8, scale: 1, fade: 1 };
+    const TIERS = [
+      { size: 5, colour: "#202025", w: 1 },
+      { size: 8, colour: "#26262c", w: 1.4 },
+      { size: 12, colour: "#2d2d34", w: 1.8 }
+    ];
+    let W = 0, H = 0, dpr = 1, flakes = [];
+    const make = (seeded) => {
+      const tier = Math.random() * 3 | 0;
+      const t = TIERS[tier];
+      return {
+        x: Math.random() * W,
+        y: seeded ? Math.random() * H : -t.size * 4,
+        speed: 0.6 + tier * 0.35 + Math.random() * 0.4,
+        size: t.size,
+        colour: t.colour,
+        drift: 6 + Math.random() * 16,
+        phase: Math.random() * Math.PI * 2
+      };
+    };
+    const resize = () => {
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      W = c.clientWidth; H = c.clientHeight;
+      c.width = W * dpr; c.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const base = Math.max(40, Math.min(140, W * H / 12000 | 0));
+      const count = Math.round(base * (this.props.fallDensity ?? mult.count));
+      while (flakes.length < count) flakes.push(make(true));
+      flakes.length = count;
+    };
+    const draw = () => {
+      if (c.clientWidth !== W || c.clientHeight !== H) resize();
+      ctx.clearRect(0, 0, W, H);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (const f of flakes) {
+        if (!reduce) {
+          f.y += f.speed * mult.speed;
+          f.phase += 0.02 * mult.speed;
+          if (f.y - f.size * 3 > H) Object.assign(f, make(false));
+        }
+        const s = f.size * mult.scale;
+        ctx.globalAlpha = mult.fade;
+        ctx.fillStyle = f.colour;
+        ctx.font = "700 " + (s * 2.6).toFixed(1) + "px 'Open Sans', 'Segoe UI', sans-serif";
+        ctx.fillText("G", f.x + Math.sin(f.phase) * f.drift, f.y);
+      }
+      this.fallRaf = requestAnimationFrame(draw);
+    };
+    this.onResize = resize;
+    window.addEventListener("resize", resize);
+    resize();
+    draw();
+  }
+
+  renderVals() {
+    const addr = this.props.serverAddress ?? "73.179.76.189:27015";
+    const s = this.state.server, q = this.state.query;
+    const items = [{ label: "Server", value: addr }];
+    if (s) {
+      items.push(
+        { label: "Name", value: s.name },
+        { label: "Map", value: s.map },
+        { label: "Gamemode", value: s.gamemode },
+        { label: "Players", value: s.players + "/" + s.maxPlayers },
+        { label: "Status", value: s.status }
+      );
+    } else {
+      items.push({
+        label: "Status",
+        value: q === "querying" ? "Querying..." : q === "notfound" ? "Server not listed" : "Query failed"
+      });
+    }
+    return {
+      wordRef: this.wordRef,
+      tagline: this.props.tagline ?? "Please stand by",
+      status: items,
+      statusBarStyle: { border: "1px solid var(--jr-border-subtle)", borderRadius: "var(--jr-radius-group)", maxWidth: "100%", flexWrap: "wrap", rowGap: "6px" }
+    };
+  }
+}
+</script>
+</body>
+</html>
