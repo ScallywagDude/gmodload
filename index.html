@@ -17,7 +17,7 @@
             padding:6px 10px; font-size:12px; color:#9a9aa4; }
   .k { color:#6f6f79; }
   .v { color:#e6e6ea; margin-right:14px; }
-  #players { position:absolute; top:20px; right:20px; width:230px;
+  #players { position:absolute; top:20px; right:20px; width:250px;
              background:#1e1e22; border:1px solid #2e2e34; padding:8px 10px 9px;
              font-size:12px; text-align:left; }
   #players .cap { color:#9a9aa4; font-size:11px; letter-spacing:0.06em;
@@ -27,6 +27,12 @@
   #plist { max-height:260px; overflow:hidden; }
   #plist div { color:#e6e6ea; padding:2px 0; white-space:nowrap;
                overflow:hidden; text-overflow:ellipsis; }
+  #plist div.row { color:#e6e6ea; padding:2px 0; white-space:nowrap; overflow:hidden; }
+  #plist .nm { display:inline-block; width:130px; overflow:hidden;
+               text-overflow:ellipsis; vertical-align:bottom; }
+  #plist .sc { display:inline-block; width:34px; text-align:right; color:#9a9aa4; }
+  #plist .tm { display:inline-block; width:52px; text-align:right; color:#6f6f79; }
+  #plist .hd { color:#6f6f79; font-size:11px; padding-bottom:3px; }
   #plist .empty { color:#6f6f79; }
   a { color:#74c757; text-decoration:none; }
   a:hover { color:#8fd977; }
@@ -50,6 +56,24 @@
    no flexbox, no fetch, no arrow functions. Works in Awesomium and CEF. */
 (function () {
   var TICK = 33;
+
+  /* ============================================================
+     CONFIG — point this at a JSON endpoint that reports players.
+     GMod's loading screen gets no live player data from the game,
+     so the count must come from your own server/webhost.
+     Accepted shapes:
+       {"players":["Name","Name"],"maxplayers":10}
+       {"players":[{"name":"Name"}],"maxplayers":10}
+       {"numplayers":3,"maxplayers":10}
+     Must be served with: Access-Control-Allow-Origin: *
+     ============================================================ */
+  var PLAYERS_JSON = "";        /* optional: your own JSON feed, overrides the API below */
+  var POLL_MS = 5000;
+
+  /* Public A2S bridge (CORS-enabled) — returns live count and the real player list */
+  var API = "https://gameserveranalytics.com/api/v2/query";
+  var SERVER_IP = "73.179.76.189";
+  var SERVER_PORT = "27015";
 
   function setOpacity(el, v) {
     el.style.opacity = v;
@@ -81,8 +105,8 @@
   }, 10000);
 
   /* ---- server info: GMod calls these globals itself ---- */
-  var info = { hostname: "Gay Bar", map: "", gamemode: "", steamid: "",
-               numplayers: null, maxplayers: null, list: [] };
+  var info = { hostname: "", map: "", gamemode: "", steamid: "",
+               numplayers: null, maxplayers: null, list: [], listAt: 0, countAt: 0 };
 
   function q(name) {
     var m = new RegExp("[?&]" + name + "=([^&]*)").exec(window.location.search || "");
@@ -93,7 +117,7 @@
   info.gamemode = q("gamemode");
   info.steamid = q("steamid");
   if (q("maxplayers")) info.maxplayers = parseInt(q("maxplayers"), 10);
-  if (q("numplayers")) info.numplayers = parseInt(q("numplayers"), 10);
+  if (q("numplayers")) { info.numplayers = parseInt(q("numplayers"), 10); info.countAt = 1; }
 
   /* players=Name1,Name2,... — set by the server on the loading URL */
   var rawList = q("players") || q("playerlist");
@@ -101,8 +125,9 @@
     var parts = rawList.split(","), k;
     for (k = 0; k < parts.length; k++) {
       var nm = parts[k].replace(/^\s+|\s+$/g, "");
-      if (nm) info.list.push(nm);
+      if (nm) info.list.push({ name: nm, score: null, time: "" });
     }
+    if (info.list.length) info.listAt = 1;
   }
 
   function esc(s) {
@@ -110,8 +135,11 @@
   }
 
   function count() {
-    if (info.list.length) return info.list.length;
+    /* whichever source reported most recently wins */
+    if (info.list.length && info.listAt >= info.countAt) return info.list.length;
     if (info.numplayers !== null && !isNaN(info.numplayers)) return info.numplayers;
+    if (info.list.length) return info.list.length;
+    if (info.maxplayers !== null && !isNaN(info.maxplayers)) return 1; /* you, connecting */
     return null;
   }
 
@@ -130,9 +158,9 @@
 
   function paint() {
     var rows = [
-      ["Server", info.hostname],
-      ["Map", info.map || "gm_genesis"],
-      ["Gamemode", info.gamemode || "sandbox"],
+      ["Server", info.hostname || "-"],
+      ["Map", info.map || "-"],
+      ["Gamemode", info.gamemode || "-"],
       ["Players", playersText()],
       ["SteamID", info.steamid || "-"]
     ], h = "", i;
@@ -142,12 +170,22 @@
     statusEl.innerHTML = h;
 
     countEl.innerHTML = playersText();
-    if (info.list.length) {
-      var lh = "";
-      for (i = 0; i < info.list.length; i++) lh += "<div>" + esc(info.list[i]) + "</div>";
+    var stale = info.list.length && info.countAt > info.listAt &&
+                info.numplayers !== null && info.numplayers !== info.list.length;
+    if (info.list.length && !stale) {
+      var lh = '<div class="row hd"><span class="nm">Name</span>' +
+               '<span class="sc">Score</span><span class="tm">Time</span></div>';
+      for (i = 0; i < info.list.length; i++) {
+        var p = info.list[i];
+        lh += '<div class="row"><span class="nm">' + esc(p.name) + '</span>' +
+              '<span class="sc">' + (p.score === null ? "" : p.score) + '</span>' +
+              '<span class="tm">' + esc(p.time || "") + '</span></div>';
+      }
       listEl.innerHTML = lh;
     } else if (count() === 0) {
       listEl.innerHTML = '<div class="empty">Server is empty</div>';
+    } else if (count() === 1 && info.numplayers === null) {
+      listEl.innerHTML = '<div class="empty">Connecting</div>';
     } else {
       listEl.innerHTML = '<div class="empty">No player list sent</div>';
     }
@@ -156,11 +194,17 @@
 
   window.GameDetails = function (servername, serverurl, mapname, maxplayers, steamid, gamemode) {
     if (servername) info.hostname = servername;
+    /* serverurl looks like "73.179.76.189:27015" — aim the API at the live server */
+    if (serverurl) {
+      var m = /(\d+\.\d+\.\d+\.\d+)(?::(\d+))?/.exec(serverurl);
+      if (m) { SERVER_IP = m[1]; if (m[2]) SERVER_PORT = m[2]; }
+    }
     if (mapname) info.map = mapname;
     if (gamemode) info.gamemode = gamemode;
     if (maxplayers) info.maxplayers = parseInt(maxplayers, 10);
     if (steamid) info.steamid = steamid;
     paint();
+    poll();
   };
 
   /* Server-side hooks: call either from Lua via loading-screen JS. */
@@ -172,19 +216,96 @@
     if (names && names.length) {
       for (i = 0; i < names.length; i++) {
         var n = names[i];
-        if (n && typeof n === "object") n = n.name || n.nick || "";
-        n = String(n).replace(/^\s+|\s+$/g, "");
-        if (n) out.push(n);
+        if (n && typeof n === "object") {
+          out.push({ name: String(n.name || n.nick || ""), score: null, time: "" });
+        } else {
+          n = String(n).replace(/^\s+|\s+$/g, "");
+          if (n) out.push({ name: n, score: null, time: "" });
+        }
       }
     }
     info.list = out;
+    info.listAt = new Date().getTime();
     paint();
   };
   window.SetPlayerCount = function (n, mx) {
     info.numplayers = parseInt(n, 10);
+    info.countAt = new Date().getTime();
     if (mx) info.maxplayers = parseInt(mx, 10);
     paint();
   };
+
+  /* ---- poll PLAYERS_JSON if configured (XHR: works in Awesomium + CEF) ---- */
+  function applyFeed(d) {
+    if (!d) return;
+    if (d.maxplayers) info.maxplayers = parseInt(d.maxplayers, 10);
+    else if (d.max) info.maxplayers = parseInt(d.max, 10);
+    if (d.numplayers !== undefined) {
+      info.numplayers = parseInt(d.numplayers, 10);
+      info.countAt = new Date().getTime();
+    }
+    var src = d.players || d.list || d.playerlist;
+    if (src && src.length !== undefined && typeof src !== "string") {
+      var out = [], i;
+      for (i = 0; i < src.length; i++) {
+        var n = src[i], nm, sc = null, tm = "";
+        if (n && typeof n === "object") {
+          nm = n.name || n.nick || n.nickname || "";
+          if (n.score !== undefined) sc = n.score;
+          tm = n.duration_formatted || n.time || "";
+        } else { nm = n; }
+        nm = String(nm).replace(/^\s+|\s+$/g, "");
+        if (nm) out.push({ name: nm, score: sc, time: tm });
+      }
+      info.list = out;
+      info.numplayers = out.length;
+      info.listAt = new Date().getTime();
+      info.countAt = info.listAt;
+    } else if (typeof src === "number") {
+      info.numplayers = src;
+      info.countAt = new Date().getTime();
+    }
+    paint();
+  }
+
+  function poll() {
+    if (PLAYERS_JSON) { pollUrl(PLAYERS_JSON, applyFeed); return; }
+    if (!API || !SERVER_IP) return;
+    var base = API + "?ip=" + SERVER_IP + "&port=" + SERVER_PORT + "&game=source";
+    pollUrl(base, function (d) {
+      if (!d) return;
+      if (d.name) info.hostname = d.name;
+      if (d.map) info.map = d.map;
+      if (d.version) info.gamemode = d.version;
+      if (d.max_players) info.maxplayers = parseInt(d.max_players, 10);
+      if (d.players !== undefined && typeof d.players === "number") {
+        info.numplayers = d.players;
+        info.countAt = new Date().getTime();
+      }
+      paint();
+    });
+    pollUrl(base + "&type=players", function (d) {
+      if (!d || d.length === undefined) return;
+      applyFeed({ players: d });
+    });
+  }
+
+  function pollUrl(u, done) {
+    var x;
+    try { x = new XMLHttpRequest(); } catch (e) { return; }
+    var url = u + (u.indexOf("?") > -1 ? "&" : "?") + "_=" + new Date().getTime();
+    try { x.open("GET", url, true); } catch (e2) { return; }
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      if (x.status !== 200) return;
+      var d = null;
+      try { d = JSON.parse(x.responseText); } catch (e3) { return; }
+      done(d);
+    };
+    try { x.send(null); } catch (e4) {}
+  }
+  poll();
+  setInterval(poll, POLL_MS);
   window.SetFilesTotal = function () {};
   window.SetFilesNeeded = function () {};
   window.DownloadingFile = function () {};
