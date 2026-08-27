@@ -71,13 +71,12 @@
 (function () {
   var TICK = 33;
 
-  /* ---- addon list: filled at runtime from the server, never hardcoded ----
-     Sources, in priority order:
-       1. window.SetAddonList(names)  — call from your loading-screen Lua
-       2. ADDONS_JSON                 — your own {"addons":[...],"total":n} feed
-       3. GMod's own DownloadingFile/SetFilesTotal hooks (what the client is
-          actually mounting right now)
-       4. the A2S rules the server publishes (workshop/addon keys) */
+  /* ---- addon list: two sources only, never hardcoded, never local subs ----
+       1. the SERVER: window.SetAddonList(names) from your loading-screen Lua,
+          or ADDONS_JSON — your own {"addons":[...],"total":n} feed
+       2. STEAM: the Workshop collection the server runs (read below)
+     GMod's client-side download hooks are deliberately NOT used as a source —
+     they report what this client is mounting, not what the server runs. */
   var ADDONS_JSON = "";      /* optional: e.g. "https://yoursite.com/addons.json" */
   /* Live Workshop collection the server runs. Steam's API blocks browsers, so the
      collection page is read through a CORS proxy and its titles parsed out. */
@@ -306,19 +305,7 @@
     return true;
   }
 
-  /* pretty-print a raw download path into an addon-ish name */
-  function niceName(path) {
-    var p = String(path).replace(/\\/g, "/");
-    var m = /([^\/]+)\.gma$/i.exec(p);
-    if (m) return m[1].replace(/[_\-]+/g, " ");
-    m = /^(?:.*?\/)?(addons|workshop)\/([^\/]+)/i.exec(p);
-    if (m) return m[2].replace(/[_\-]+/g, " ");
-    m = /^[^\/]+\/([^\/]+)\//.exec(p);
-    if (m) return m[1].replace(/[_\-]+/g, " ");
-    return p;
-  }
-
-  /* 1. Lua-driven: SetAddonList({"Name", ...}) or a JSON string */
+  /* SERVER source: SetAddonList({"Name", ...}) or a JSON string */
   window.SetAddonList = function (names, total) {
     if (typeof names === "string") {
       try { names = JSON.parse(names); } catch (e) { names = names.split(","); }
@@ -334,18 +321,13 @@
     paintAddons();
   };
 
-  /* 3. GMod's own download hooks report the real mount list as it arrives */
-  window.SetFilesTotal = function (n) {
-    n = parseInt(n, 10);
-    if (!isNaN(n) && n > ADDON_TOTAL) { ADDON_TOTAL = n; paintAddons(); }
-  };
+  /* GMod's download hooks are client-side mount progress, NOT the server's addon
+     list — stubbed so the game has something to call, but they never feed the panel. */
+  window.SetFilesTotal = function () {};
   window.SetFilesNeeded = function () {};
-  window.DownloadingFile = function (fileName) {
-    if (!fileName) return;
-    if (addAddon(niceName(fileName))) paintAddons();
-  };
+  window.DownloadingFile = function () {};
 
-  /* 2. optional JSON feed */
+  /* SERVER source: optional JSON feed */
   function applyAddonFeed(d) {
     if (!d) return;
     var src = d.addons || d.list || d.workshop || d;
@@ -361,8 +343,8 @@
     paintAddons();
   }
 
-  /* 5. live Workshop collection through the CORS proxy (cached locally) */
-  var ADDON_CACHE_KEY = "gb_addons_" + COLLECTION_ID;
+  /* STEAM source: the server's Workshop collection, via CORS proxy (cached locally) */
+  var ADDON_CACHE_KEY = "gb_addons2_" + COLLECTION_ID;
 
   function setAddons(names, total) {
     ADDONS = []; ADDON_SEEN = {};
@@ -388,15 +370,17 @@
     try { x.open("GET", CORS_PROXY + encodeURIComponent(target), true); } catch (e2) { return; }
     x.onreadystatechange = function () {
       if (x.readyState !== 4 || x.status !== 200) return;
-      var t = x.responseText, re = /workshopItemTitle[^>]*>([\s\S]*?)</g, m, names = [];
+      var t = x.responseText;
+      /* only the collection's own children — not "more like this" or subs elsewhere */
+      var ci = t.indexOf("collectionChildren");
+      if (ci > -1) t = t.slice(ci);
+      var re = /workshopItemTitle[^>]*>([\s\S]*?)</g, m, names = [], dedupe = {};
       while ((m = re.exec(t))) {
         var n = m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
                     .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
                     .replace(/^\s+|\s+$/g, "");
-        if (n) names.push(n);
+        if (n && !dedupe[n]) { dedupe[n] = 1; names.push(n); }
       }
-      /* the first title on the page is the collection itself */
-      if (names.length > 1) names.shift();
       if (!names.length) return;
       var total = names.length;
       setAddons(names, total);
@@ -411,22 +395,6 @@
 
   loadCachedAddons();
   fetchCollection();
-
-  /* 4. addon/workshop keys out of the server's published A2S rules */
-  function applyRules(d) {
-    if (!d) return;
-    var rules = d.rules || d, key, added = false;
-    for (key in rules) {
-      if (!rules.hasOwnProperty(key)) continue;
-      if (!/addon|workshop|mount/i.test(key)) continue;
-      var val = String(rules[key]);
-      var parts = val.split(/[,;]/);
-      for (var i = 0; i < parts.length; i++) {
-        if (parts[i] && addAddon(niceName(parts[i]))) added = true;
-      }
-    }
-    if (added) paintAddons();
-  }
 
   /* ---- poll PLAYERS_JSON if configured (XHR: works in Awesomium + CEF) ---- */
   function applyFeed(d) {
