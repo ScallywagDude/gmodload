@@ -398,8 +398,7 @@
       /* the first title on the page is the collection itself */
       if (names.length > 1) names.shift();
       if (!names.length) return;
-      var tm = /Items\s*\((\d+)\)/.exec(t);
-      var total = tm ? parseInt(tm[1], 10) : names.length;
+      var total = names.length;
       setAddons(names, total);
       try {
         if (window.localStorage) {
