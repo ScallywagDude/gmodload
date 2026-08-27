@@ -2,99 +2,187 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Bacon Sandbox</title>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>Gay Bar</title>
 <style>
-  html, body { margin:0; padding:0; height:100%; background:#161619; overflow:hidden; }
-  body { font-family:"Open Sans","Segoe UI",Tahoma,sans-serif; color:#e6e6ea; }
-  #fall { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
-  #wrap { position:absolute; top:0; left:0; right:0; bottom:0;
-          display:-webkit-box; display:-webkit-flex; display:flex;
-          -webkit-box-orient:vertical; -webkit-flex-direction:column; flex-direction:column; }
-  #stage { -webkit-box-flex:1; -webkit-flex:1; flex:1;
-           display:-webkit-box; display:-webkit-flex; display:flex;
-           -webkit-box-orient:vertical; -webkit-flex-direction:column; flex-direction:column;
-           -webkit-box-align:center; -webkit-align-items:center; align-items:center;
-           -webkit-box-pack:center; -webkit-justify-content:center; justify-content:center;
-           text-align:center; padding:40px; }
+  html, body { margin:0; padding:0; width:100%; height:100%; background:#161619; overflow:hidden; }
+  body { font-family:"Open Sans","Segoe UI",Tahoma,Arial,sans-serif; color:#e6e6ea; }
+  #fall { position:absolute; top:0; left:0; }
+  #stage { position:absolute; top:26%; left:0; width:100%; text-align:center; }
   .line { font-size:56px; font-weight:700; line-height:1.15; letter-spacing:-0.02em;
-          max-width:900px; margin:6px 0; opacity:0; color:#e6e6ea;
-          -webkit-animation:fadein 1.5s linear forwards; animation:fadein 1.5s linear forwards; }
-  #l1 { -webkit-animation-duration:3s; animation-duration:3s; }
-  .hidden { display:none; }
-  @-webkit-keyframes fadein { from { opacity:0; } to { opacity:1; } }
-  @keyframes fadein { from { opacity:0; } to { opacity:1; } }
-  #bar { padding:0 20px 20px; text-align:center; }
-  #status { display:inline-block; background:#1e1e22; border:1px solid #2e2e34; border-radius:6px;
+          margin:10px auto; max-width:900px; color:#e6e6ea;
+          opacity:0; filter:alpha(opacity=0); }
+  #bar { position:absolute; bottom:20px; left:0; width:100%; text-align:center; }
+  #status { display:inline-block; background:#1e1e22; border:1px solid #2e2e34;
             padding:6px 10px; font-size:12px; color:#9a9aa4; }
-  #status span.k { color:#6f6f79; }
-  #status span.v { color:#e6e6ea; margin-right:14px; }
-  #status span.a { color:#74c757; }
+  .k { color:#6f6f79; }
+  .v { color:#e6e6ea; margin-right:14px; }
+  #players { position:absolute; top:20px; right:20px; width:230px;
+             background:#1e1e22; border:1px solid #2e2e34; padding:8px 10px 9px;
+             font-size:12px; text-align:left; }
+  #players .cap { color:#9a9aa4; font-size:11px; letter-spacing:0.06em;
+                  text-transform:uppercase; padding-bottom:6px;
+                  border-bottom:1px solid #2e2e34; margin-bottom:6px; }
+  #players .cap b { color:#74c757; font-weight:700; }
+  #plist { max-height:260px; overflow:hidden; }
+  #plist div { color:#e6e6ea; padding:2px 0; white-space:nowrap;
+               overflow:hidden; text-overflow:ellipsis; }
+  #plist .empty { color:#6f6f79; }
   a { color:#74c757; text-decoration:none; }
   a:hover { color:#8fd977; }
 </style>
 </head>
 <body>
 <canvas id="fall"></canvas>
-<div id="wrap">
-  <div id="stage">
-    <div class="line" id="l1">Gay Bar with absolutely no gay people of color</div>
-    <div class="line hidden" id="l2">I mean the rainbow</div>
-    <div class="line hidden" id="l3">obviously</div>
-    <div class="line hidden" id="l4">You racist fuck.</div>
-  </div>
-  <div id="bar"><div id="status"></div></div>
+<div id="stage">
+  <div class="line" id="l1">Gay Bar with absolutely no gay people of color</div>
+  <div class="line" id="l2">I mean the rainbow</div>
+  <div class="line" id="l3">obviously</div>
+  <div class="line" id="l4">You racist fuck.</div>
 </div>
-<script>
+<div id="players">
+  <div class="cap">Players <b id="pcount">-</b></div>
+  <div id="plist"><div class="empty">Waiting for server</div></div>
+</div>
+<div id="bar"><div id="status"></div></div>
+<script type="text/javascript">
+/* Everything below is ES5 + setInterval only: no rAF, no CSS animation,
+   no flexbox, no fetch, no arrow functions. Works in Awesomium and CEF. */
 (function () {
-  /* ---- text sequence ---- */
+  var TICK = 33;
+
+  function setOpacity(el, v) {
+    el.style.opacity = v;
+    el.style.filter = "alpha(opacity=" + Math.round(v * 100) + ")";
+  }
+  function fade(el, ms) {
+    var start = new Date().getTime();
+    var iv = setInterval(function () {
+      var p = (new Date().getTime() - start) / ms;
+      if (p >= 1) { p = 1; clearInterval(iv); }
+      setOpacity(el, p);
+    }, TICK);
+    setOpacity(el, 0);
+  }
+
   var l1 = document.getElementById("l1"),
       l2 = document.getElementById("l2"),
       l3 = document.getElementById("l3"),
       l4 = document.getElementById("l4");
-  function show(el) { el.className = "line"; }
-  setTimeout(function () { show(l2); }, 3000);
-  setTimeout(function () { show(l3); }, 5000);
+
+  fade(l1, 3000);
+  setTimeout(function () { fade(l2, 1500); }, 3000);
+  setTimeout(function () { fade(l3, 1500); }, 5000);
   setTimeout(function () {
-    l1.className = "line hidden";
-    l2.className = "line hidden";
-    l3.className = "line hidden";
-    show(l4);
+    l1.style.display = "none";
+    l2.style.display = "none";
+    l3.style.display = "none";
+    fade(l4, 1500);
   }, 10000);
 
-  /* ---- server info: GMod calls these itself ---- */
-  var info = { hostname: "Gay Bar", map: "", players: "", gamemode: "", steamid: "" };
+  /* ---- server info: GMod calls these globals itself ---- */
+  var info = { hostname: "Gay Bar", map: "", gamemode: "", steamid: "",
+               numplayers: null, maxplayers: null, list: [] };
 
   function q(name) {
-    var m = new RegExp("[?&]" + name + "=([^&]*)").exec(window.location.search);
+    var m = new RegExp("[?&]" + name + "=([^&]*)").exec(window.location.search || "");
     return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : "";
   }
-  info.hostname = q("hostname") || info.hostname;
-  info.map      = q("mapname");
+  if (q("hostname")) info.hostname = q("hostname");
+  info.map = q("mapname");
   info.gamemode = q("gamemode");
-  info.steamid  = q("steamid");
-  if (q("maxplayers")) info.players = "0/" + q("maxplayers");
+  info.steamid = q("steamid");
+  if (q("maxplayers")) info.maxplayers = parseInt(q("maxplayers"), 10);
+  if (q("numplayers")) info.numplayers = parseInt(q("numplayers"), 10);
+
+  /* players=Name1,Name2,... — set by the server on the loading URL */
+  var rawList = q("players") || q("playerlist");
+  if (rawList) {
+    var parts = rawList.split(","), k;
+    for (k = 0; k < parts.length; k++) {
+      var nm = parts[k].replace(/^\s+|\s+$/g, "");
+      if (nm) info.list.push(nm);
+    }
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function count() {
+    if (info.list.length) return info.list.length;
+    if (info.numplayers !== null && !isNaN(info.numplayers)) return info.numplayers;
+    return null;
+  }
+
+  function playersText() {
+    var n = count();
+    var mx = (info.maxplayers !== null && !isNaN(info.maxplayers)) ? info.maxplayers : null;
+    if (n === null && mx === null) return "-";
+    if (n === null) return "?/" + mx;
+    if (mx === null) return String(n);
+    return n + "/" + mx;
+  }
+
+  var statusEl = document.getElementById("status"),
+      countEl = document.getElementById("pcount"),
+      listEl = document.getElementById("plist");
 
   function paint() {
     var rows = [
       ["Server", info.hostname],
       ["Map", info.map || "gm_genesis"],
       ["Gamemode", info.gamemode || "sandbox"],
-      ["Players", info.players || "-"],
+      ["Players", playersText()],
       ["SteamID", info.steamid || "-"]
     ], h = "", i;
     for (i = 0; i < rows.length; i++) {
-      h += '<span class="k">' + rows[i][0] + '</span> <span class="v">' + rows[i][1] + "</span>";
+      h += '<span class="k">' + rows[i][0] + '</span> <span class="v">' + rows[i][1] + '</span>';
     }
-    document.getElementById("status").innerHTML = h;
+    statusEl.innerHTML = h;
+
+    countEl.innerHTML = playersText();
+    if (info.list.length) {
+      var lh = "";
+      for (i = 0; i < info.list.length; i++) lh += "<div>" + esc(info.list[i]) + "</div>";
+      listEl.innerHTML = lh;
+    } else if (count() === 0) {
+      listEl.innerHTML = '<div class="empty">Server is empty</div>';
+    } else {
+      listEl.innerHTML = '<div class="empty">No player list sent</div>';
+    }
   }
   paint();
 
   window.GameDetails = function (servername, serverurl, mapname, maxplayers, steamid, gamemode) {
-    info.hostname = servername || info.hostname;
-    info.map = mapname || info.map;
-    info.gamemode = gamemode || info.gamemode;
-    info.players = "0/" + maxplayers;
-    info.steamid = steamid || info.steamid;
+    if (servername) info.hostname = servername;
+    if (mapname) info.map = mapname;
+    if (gamemode) info.gamemode = gamemode;
+    if (maxplayers) info.maxplayers = parseInt(maxplayers, 10);
+    if (steamid) info.steamid = steamid;
+    paint();
+  };
+
+  /* Server-side hooks: call either from Lua via loading-screen JS. */
+  window.SetPlayerList = function (names) {
+    var out = [], i;
+    if (typeof names === "string") {
+      try { names = JSON.parse(names); } catch (e) { names = names.split(","); }
+    }
+    if (names && names.length) {
+      for (i = 0; i < names.length; i++) {
+        var n = names[i];
+        if (n && typeof n === "object") n = n.name || n.nick || "";
+        n = String(n).replace(/^\s+|\s+$/g, "");
+        if (n) out.push(n);
+      }
+    }
+    info.list = out;
+    paint();
+  };
+  window.SetPlayerCount = function (n, mx) {
+    info.numplayers = parseInt(n, 10);
+    if (mx) info.maxplayers = parseInt(mx, 10);
     paint();
   };
   window.SetFilesTotal = function () {};
@@ -103,7 +191,11 @@
   window.SetStatusChanged = function () {};
 
   /* ---- blizzard of falling G ---- */
-  var c = document.getElementById("fall"), ctx = c.getContext("2d");
+  var c = document.getElementById("fall");
+  if (!c || !c.getContext) return;
+  var ctx = c.getContext("2d");
+  if (!ctx) return;
+
   var TIERS = [
     { size: 5,  colour: "#202025" },
     { size: 8,  colour: "#26262c" },
@@ -123,34 +215,37 @@
       phase: Math.random() * 6.28
     };
   }
+  function vw() { return window.innerWidth || document.documentElement.clientWidth || 1280; }
+  function vh() { return window.innerHeight || document.documentElement.clientHeight || 720; }
   function resize() {
-    W = c.clientWidth || window.innerWidth;
-    H = c.clientHeight || window.innerHeight;
+    W = vw(); H = vh();
     c.width = W; c.height = H;
-    var count = Math.max(60, Math.min(320, Math.floor(W * H / 5000)));
+    c.style.width = W + "px"; c.style.height = H + "px";
+    var count = Math.floor(W * H / 5000);
+    if (count < 60) count = 60;
+    if (count > 320) count = 320;
     while (flakes.length < count) flakes.push(make(true));
     flakes.length = count;
   }
-  function draw() {
-    if (c.clientWidth !== W || c.clientHeight !== H) resize();
+  resize();
+  if (window.addEventListener) window.addEventListener("resize", resize, false);
+  else window.onresize = resize;
+
+  setInterval(function () {
+    if (W !== vw() || H !== vh()) resize();
     ctx.clearRect(0, 0, W, H);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for (var i = 0; i < flakes.length; i++) {
       var f = flakes[i];
-      f.y += f.speed * SPEED;
-      f.phase += 0.02 * SPEED;
-      if (f.y - f.size * 3 > H) flakes[i] = f = make(false);
+      f.y += f.speed * SPEED * 2;
+      f.phase += 0.04 * SPEED;
+      if (f.y - f.size * 3 > H) { flakes[i] = make(false); f = flakes[i]; }
       ctx.fillStyle = f.colour;
-      ctx.font = '700 ' + (f.size * 2.6).toFixed(1) + 'px "Open Sans","Segoe UI",sans-serif';
+      ctx.font = '700 ' + (f.size * 2.6).toFixed(1) + 'px "Open Sans","Segoe UI",Arial,sans-serif';
       ctx.fillText("G", f.x + Math.sin(f.phase) * f.drift, f.y);
     }
-    if (window.requestAnimationFrame) requestAnimationFrame(draw);
-    else setTimeout(draw, 16);
-  }
-  window.onresize = resize;
-  resize();
-  draw();
+  }, TICK);
 })();
 </script>
 </body>
