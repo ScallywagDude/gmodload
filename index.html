@@ -8,9 +8,9 @@
   html, body { margin:0; padding:0; width:100%; height:100%; background:#161619; overflow:hidden; }
   body { font-family:"Open Sans","Segoe UI",Tahoma,Arial,sans-serif; color:#e6e6ea; }
   #fall { position:absolute; top:0; left:0; }
-  #stage { position:absolute; top:26%; left:0; width:100%; text-align:center; }
-  .line { font-size:56px; font-weight:700; line-height:1.15; letter-spacing:-0.02em;
-          margin:10px auto; max-width:900px; color:#e6e6ea;
+  #stage { position:absolute; top:26%; left:300px; right:300px; text-align:center; }
+  .line { font-size:46px; font-weight:700; line-height:1.15; letter-spacing:-0.02em;
+          margin:10px auto; max-width:100%; color:#e6e6ea;
           opacity:0; filter:alpha(opacity=0); }
   #bar { position:absolute; bottom:20px; left:0; width:100%; text-align:center; }
   #status { display:inline-block; background:#1e1e22; border:1px solid #2e2e34;
@@ -34,12 +34,26 @@
   #plist .tm { display:inline-block; width:52px; text-align:right; color:#6f6f79; }
   #plist .hd { color:#6f6f79; font-size:11px; padding-bottom:3px; }
   #plist .empty { color:#6f6f79; }
+  #addons { position:absolute; top:20px; left:20px; width:250px;
+            background:#1e1e22; border:1px solid #2e2e34; padding:8px 10px 9px;
+            font-size:12px; text-align:left; }
+  #addons .cap { color:#9a9aa4; font-size:11px; letter-spacing:0.06em;
+                 text-transform:uppercase; padding-bottom:6px;
+                 border-bottom:1px solid #2e2e34; margin-bottom:6px; }
+  #addons .cap b { color:#74c757; font-weight:700; }
+  #alist { height:300px; overflow:hidden; }
+  #alist div { color:#e6e6ea; padding:2px 0; white-space:nowrap;
+               overflow:hidden; text-overflow:ellipsis; }
   a { color:#74c757; text-decoration:none; }
   a:hover { color:#8fd977; }
 </style>
 </head>
 <body>
 <canvas id="fall"></canvas>
+<div id="addons">
+  <div class="cap">Addons <b id="acount">-</b></div>
+  <div id="alist"></div>
+</div>
 <div id="stage">
   <div class="line" id="l1">Gay Bar with absolutely no gay people of color</div>
   <div class="line" id="l2">I mean the rainbow</div>
@@ -56,6 +70,22 @@
    no flexbox, no fetch, no arrow functions. Works in Awesomium and CEF. */
 (function () {
   var TICK = 33;
+
+  /* ---- addon list: filled at runtime from the server, never hardcoded ----
+     Sources, in priority order:
+       1. window.SetAddonList(names)  — call from your loading-screen Lua
+       2. ADDONS_JSON                 — your own {"addons":[...],"total":n} feed
+       3. GMod's own DownloadingFile/SetFilesTotal hooks (what the client is
+          actually mounting right now)
+       4. the A2S rules the server publishes (workshop/addon keys) */
+  var ADDONS_JSON = "";      /* optional: e.g. "https://yoursite.com/addons.json" */
+  /* Live Workshop collection the server runs. Steam's API blocks browsers, so the
+     collection page is read through a CORS proxy and its titles parsed out. */
+  var COLLECTION_ID = "3785829915";
+  var CORS_PROXY = "https://corsproxy.io/?url=";
+  var ADDONS = [];
+  var ADDON_SEEN = {};
+  var ADDON_TOTAL = 0;
 
   /* ============================================================
      CONFIG — point this at a JSON endpoint that reports players.
@@ -235,6 +265,170 @@
     paint();
   };
 
+  /* ---- addon panel: repaints whenever the server sends more ---- */
+  var aCountEl = document.getElementById("acount"),
+      aListEl = document.getElementById("alist"),
+      aInner = document.createElement("div"),
+      aScroll = 0;
+  aInner.style.position = "relative";
+  aListEl.innerHTML = "";
+  aListEl.appendChild(aInner);
+
+  function paintAddons() {
+    var total = ADDON_TOTAL > ADDONS.length ? ADDON_TOTAL : ADDONS.length;
+    aCountEl.innerHTML = total ? total : "-";
+    if (!ADDONS.length) {
+      aInner.innerHTML = '<div style="color:#6f6f79">Waiting for server</div>';
+      return;
+    }
+    var h2 = "", i;
+    for (i = 0; i < ADDONS.length; i++) h2 += "<div>" + esc(ADDONS[i]) + "</div>";
+    if (total > ADDONS.length) {
+      h2 += '<div style="color:#6f6f79">+ ' + (total - ADDONS.length) + ' more</div>';
+    }
+    aInner.innerHTML = h2;
+  }
+  paintAddons();
+
+  setInterval(function () {
+    var span = aInner.offsetHeight - aListEl.offsetHeight;
+    if (span <= 0) { aInner.style.top = "0px"; return; }
+    aScroll += 0.25;
+    if (aScroll > span + 40) aScroll = 0;
+    aInner.style.top = (-Math.min(aScroll, span)) + "px";
+  }, TICK);
+
+  function addAddon(name) {
+    name = String(name).replace(/^\s+|\s+$/g, "");
+    if (!name || ADDON_SEEN[name]) return false;
+    ADDON_SEEN[name] = 1;
+    ADDONS.push(name);
+    return true;
+  }
+
+  /* pretty-print a raw download path into an addon-ish name */
+  function niceName(path) {
+    var p = String(path).replace(/\\/g, "/");
+    var m = /([^\/]+)\.gma$/i.exec(p);
+    if (m) return m[1].replace(/[_\-]+/g, " ");
+    m = /^(?:.*?\/)?(addons|workshop)\/([^\/]+)/i.exec(p);
+    if (m) return m[2].replace(/[_\-]+/g, " ");
+    m = /^[^\/]+\/([^\/]+)\//.exec(p);
+    if (m) return m[1].replace(/[_\-]+/g, " ");
+    return p;
+  }
+
+  /* 1. Lua-driven: SetAddonList({"Name", ...}) or a JSON string */
+  window.SetAddonList = function (names, total) {
+    if (typeof names === "string") {
+      try { names = JSON.parse(names); } catch (e) { names = names.split(","); }
+    }
+    if (!names || names.length === undefined) return;
+    ADDONS = []; ADDON_SEEN = {};
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      if (n && typeof n === "object") n = n.title || n.name || n.file || "";
+      addAddon(n);
+    }
+    ADDON_TOTAL = total ? parseInt(total, 10) : ADDONS.length;
+    paintAddons();
+  };
+
+  /* 3. GMod's own download hooks report the real mount list as it arrives */
+  window.SetFilesTotal = function (n) {
+    n = parseInt(n, 10);
+    if (!isNaN(n) && n > ADDON_TOTAL) { ADDON_TOTAL = n; paintAddons(); }
+  };
+  window.SetFilesNeeded = function () {};
+  window.DownloadingFile = function (fileName) {
+    if (!fileName) return;
+    if (addAddon(niceName(fileName))) paintAddons();
+  };
+
+  /* 2. optional JSON feed */
+  function applyAddonFeed(d) {
+    if (!d) return;
+    var src = d.addons || d.list || d.workshop || d;
+    if (typeof d.total !== "undefined") ADDON_TOTAL = parseInt(d.total, 10);
+    if (!src || src.length === undefined || typeof src === "string") return;
+    ADDONS = []; ADDON_SEEN = {};
+    for (var i = 0; i < src.length; i++) {
+      var n = src[i];
+      if (n && typeof n === "object") n = n.title || n.name || n.file || "";
+      addAddon(n);
+    }
+    if (!ADDON_TOTAL || ADDON_TOTAL < ADDONS.length) ADDON_TOTAL = ADDONS.length;
+    paintAddons();
+  }
+
+  /* 5. live Workshop collection through the CORS proxy (cached locally) */
+  var ADDON_CACHE_KEY = "gb_addons_" + COLLECTION_ID;
+
+  function setAddons(names, total) {
+    ADDONS = []; ADDON_SEEN = {};
+    for (var i = 0; i < names.length; i++) addAddon(names[i]);
+    ADDON_TOTAL = total && total > ADDONS.length ? total : ADDONS.length;
+    paintAddons();
+  }
+
+  function loadCachedAddons() {
+    try {
+      var raw = window.localStorage && localStorage.getItem(ADDON_CACHE_KEY);
+      if (!raw) return;
+      var d = JSON.parse(raw);
+      if (d && d.names && d.names.length) setAddons(d.names, d.total);
+    } catch (e) {}
+  }
+
+  function fetchCollection() {
+    if (!COLLECTION_ID || !CORS_PROXY) return;
+    var target = "https://steamcommunity.com/sharedfiles/filedetails/?id=" + COLLECTION_ID;
+    var x;
+    try { x = new XMLHttpRequest(); } catch (e) { return; }
+    try { x.open("GET", CORS_PROXY + encodeURIComponent(target), true); } catch (e2) { return; }
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4 || x.status !== 200) return;
+      var t = x.responseText, re = /workshopItemTitle[^>]*>([\s\S]*?)</g, m, names = [];
+      while ((m = re.exec(t))) {
+        var n = m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+                    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+                    .replace(/^\s+|\s+$/g, "");
+        if (n) names.push(n);
+      }
+      /* the first title on the page is the collection itself */
+      if (names.length > 1) names.shift();
+      if (!names.length) return;
+      var tm = /Items\s*\((\d+)\)/.exec(t);
+      var total = tm ? parseInt(tm[1], 10) : names.length;
+      setAddons(names, total);
+      try {
+        if (window.localStorage) {
+          localStorage.setItem(ADDON_CACHE_KEY, JSON.stringify({ names: names, total: total }));
+        }
+      } catch (e3) {}
+    };
+    try { x.send(null); } catch (e4) {}
+  }
+
+  loadCachedAddons();
+  fetchCollection();
+
+  /* 4. addon/workshop keys out of the server's published A2S rules */
+  function applyRules(d) {
+    if (!d) return;
+    var rules = d.rules || d, key, added = false;
+    for (key in rules) {
+      if (!rules.hasOwnProperty(key)) continue;
+      if (!/addon|workshop|mount/i.test(key)) continue;
+      var val = String(rules[key]);
+      var parts = val.split(/[,;]/);
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i] && addAddon(niceName(parts[i]))) added = true;
+      }
+    }
+    if (added) paintAddons();
+  }
+
   /* ---- poll PLAYERS_JSON if configured (XHR: works in Awesomium + CEF) ---- */
   function applyFeed(d) {
     if (!d) return;
@@ -269,6 +463,7 @@
   }
 
   function poll() {
+    if (ADDONS_JSON) pollUrl(ADDONS_JSON, applyAddonFeed);
     if (PLAYERS_JSON) { pollUrl(PLAYERS_JSON, applyFeed); return; }
     if (!API || !SERVER_IP) return;
     var base = API + "?ip=" + SERVER_IP + "&port=" + SERVER_PORT + "&game=source";
@@ -306,9 +501,6 @@
   }
   poll();
   setInterval(poll, POLL_MS);
-  window.SetFilesTotal = function () {};
-  window.SetFilesNeeded = function () {};
-  window.DownloadingFile = function () {};
   window.SetStatusChanged = function () {};
 
   /* ---- blizzard of falling G ---- */
